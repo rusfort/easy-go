@@ -1,19 +1,56 @@
 package eg
 
 import (
+	"fmt"
+	"sync"
 	"sync/atomic"
 )
 
+const (
+	egThreadPrefix = "EG_THREAD_"
+)
+
+type Threader struct {
+	mtx     sync.Mutex
+	threads []*Thread
+}
+
+var TR Threader
+
+func (tr *Threader) CreateNew(routine func()) *Thread {
+	tr.mtx.Lock()
+	defer tr.mtx.Unlock()
+
+	t := &Thread{
+		position: len(tr.threads),
+		routine:  routine,
+	}
+
+	tr.threads = append(tr.threads, t)
+	return t
+}
+
 type Thread struct {
+	position       int
 	previous, next *Thread
 	routine        func()
 	started        atomic.Bool
 }
 
 func NewThread(routine func()) *Thread {
-	return &Thread{
-		routine: routine,
+	return TR.CreateNew(routine)
+}
+
+func (t *Thread) String() string {
+	if t == nil {
+		return fmt.Sprint(egThreadPrefix + "NULL")
 	}
+
+	return fmt.Sprintf("%s%d", egThreadPrefix, t.position)
+}
+
+func (t *Thread) logSelf(comment string) {
+	fmt.Printf("%s: %s\n", t.String(), comment)
 }
 
 func (t *Thread) Then(next *Thread) *Thread {
@@ -46,21 +83,33 @@ func (t *Thread) After(previous *Thread) *Thread {
 	return t.previous
 }
 
-func (t *Thread) Start() {
+func (t *Thread) Start(goInited bool) {
 	if t == nil {
 		return
 	}
 
-	go func() {
-		t.previous.MaybeStart()
+	starter := func() {
+		t.previous.MaybeStart(true)
+		t.logSelf("started previous")
 		t.previous = nil
 
 		t.started.Store(true)
+		t.logSelf("started")
 		t.routine()
+		t.logSelf("done")
 
-		t.next.MaybeStart()
+		t.next.MaybeStart(true)
+		t.logSelf("started next")
 		t.next = nil
-	}()
+	}
+
+	if goInited {
+		t.logSelf("started no go")
+		starter()
+	} else {
+		t.logSelf("started with go")
+		go starter()
+	}
 }
 
 func (t *Thread) Started() bool {
@@ -71,10 +120,22 @@ func (t *Thread) Started() bool {
 	return t.started.Load()
 }
 
-func (t *Thread) MaybeStart() {
+func (t *Thread) MaybeStart(goInited bool) {
 	if t.Started() {
 		return
 	}
 
-	t.Start()
+	if goInited {
+		t.logSelf("maybe started no go")
+		t.Start(true)
+		return
+	}
+
+	t.logSelf("maybe started with go")
+
+	go t.Start(true)
+}
+
+func (t *Thread) Run() {
+	t.MaybeStart(false)
 }
