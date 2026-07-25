@@ -90,7 +90,9 @@ func (t *Thread) Start(goInited bool) {
 
 	starter := func() {
 		t.previous.MaybeStart(true)
-		t.logSelf("started previous")
+		if t.previous != nil {
+			t.logSelf("started previous")
+		}
 		t.previous = nil
 
 		t.started.Store(true)
@@ -99,7 +101,9 @@ func (t *Thread) Start(goInited bool) {
 		t.logSelf("done")
 
 		t.next.MaybeStart(true)
-		t.logSelf("started next")
+		if t.next != nil {
+			t.logSelf("started next")
+		}
 		t.next = nil
 	}
 
