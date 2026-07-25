@@ -8,6 +8,10 @@ func NewChan[T any]() *Chan[T] {
 	return &Chan[T]{}
 }
 
+func (c *Chan[T]) Original() chan T {
+	return c.ch
+}
+
 func (c *Chan[T]) Write(v T) {
 	c.ch <- v
 }
