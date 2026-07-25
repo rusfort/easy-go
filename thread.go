@@ -28,7 +28,7 @@ func (t *Thread) Then(next *Thread) *Thread {
 	t.next = next
 	t.next.After(t)
 
-	return t
+	return t.next
 }
 
 func (t *Thread) After(previous *Thread) *Thread {
@@ -43,7 +43,7 @@ func (t *Thread) After(previous *Thread) *Thread {
 	t.previous = previous
 	t.previous.Then(t)
 
-	return t
+	return t.previous
 }
 
 func (t *Thread) Start() {
@@ -56,7 +56,7 @@ func (t *Thread) Start() {
 		t.previous = nil
 
 		t.started.Store(true)
-		t.MaybeStart()
+		t.routine()
 
 		t.next.MaybeStart()
 		t.next = nil

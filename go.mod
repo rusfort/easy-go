@@ -1,4 +1,4 @@
-module gitlab.tech.mvideo.ru/mvideoru/mvdrive/mvdrive-platform
+module github.com/rusfort/easy-go
 
 go 1.26.4
 
