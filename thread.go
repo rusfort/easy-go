@@ -10,24 +10,44 @@ const (
 	egThreadPrefix = "EG_THREAD_"
 )
 
-type Threader struct {
+type threader struct {
 	mtx     sync.Mutex
 	threads []*Thread
+	exexMap sync.Map
 }
 
-var TR Threader
+var tr threader
 
-func (tr *Threader) CreateNew(routine func()) *Thread {
+func (tr *threader) CreateNew(routine func()) *Thread {
 	tr.mtx.Lock()
 	defer tr.mtx.Unlock()
 
+	position := len(tr.threads)
+
 	t := &Thread{
-		position: len(tr.threads),
+		position: position,
 		routine:  routine,
 	}
 
 	tr.threads = append(tr.threads, t)
+	tr.exexMap.Store(position, false)
 	return t
+}
+
+func (tr *threader) IsThreadExecuted(position int) bool {
+	tr.mtx.Lock()
+	defer tr.mtx.Unlock()
+
+	executed, ok := tr.exexMap.Load(position)
+	if !ok {
+		return true
+	}
+
+	return executed.(bool)
+}
+
+func (tr *threader) SetThreadExecuted(position int) {
+	tr.exexMap.Delete(position)
 }
 
 type Thread struct {
@@ -38,7 +58,7 @@ type Thread struct {
 }
 
 func NewThread(routine func()) *Thread {
-	return TR.CreateNew(routine)
+	return tr.CreateNew(routine)
 }
 
 func (t *Thread) String() string {
@@ -47,6 +67,23 @@ func (t *Thread) String() string {
 	}
 
 	return fmt.Sprintf("%s%d", egThreadPrefix, t.position)
+}
+
+func (t *Thread) Position() int {
+	if t == nil {
+		return -1
+	}
+
+	return t.position
+}
+
+func (t *Thread) SetExecuted() {
+	if t == nil {
+		return
+	}
+
+	t.started.Store(true)
+	tr.SetThreadExecuted(t.position)
 }
 
 func (t *Thread) logSelf(comment string) {
@@ -89,20 +126,24 @@ func (t *Thread) Start(goInited bool) {
 	}
 
 	starter := func() {
-		t.previous.MaybeStart(true)
-		if t.previous != nil {
-			t.logSelf("started previous")
+		if !tr.IsThreadExecuted(t.previous.Position()) {
+			t.previous.MaybeStart(true)
+			if t.previous != nil {
+				t.logSelf("started previous")
+			}
 		}
 		t.previous = nil
 
-		t.started.Store(true)
+		t.SetExecuted()
 		t.logSelf("started")
 		t.routine()
 		t.logSelf("done")
 
-		t.next.MaybeStart(true)
-		if t.next != nil {
-			t.logSelf("started next")
+		if !tr.IsThreadExecuted(t.next.Position()) {
+			t.next.MaybeStart(true)
+			if t.next != nil {
+				t.logSelf("started next")
+			}
 		}
 		t.next = nil
 	}
