@@ -126,25 +126,17 @@ func (t *Thread) Start(goInited bool) {
 	}
 
 	starter := func() {
-		if !tr.IsThreadExecuted(t.previous.Position()) {
-			t.previous.MaybeStart(true)
-			if t.previous != nil {
-				t.logSelf("started previous")
-			}
-		}
+		t.previous.MaybeStart(true)
 		t.previous = nil
 
-		t.SetExecuted()
-		t.logSelf("started")
-		t.routine()
-		t.logSelf("done")
-
-		if !tr.IsThreadExecuted(t.next.Position()) {
-			t.next.MaybeStart(true)
-			if t.next != nil {
-				t.logSelf("started next")
-			}
+		if !tr.IsThreadExecuted(t.Position()) {
+			t.SetExecuted()
+			t.logSelf("started")
+			t.routine()
+			t.logSelf("done")
 		}
+
+		t.next.MaybeStart(true)
 		t.next = nil
 	}
 
