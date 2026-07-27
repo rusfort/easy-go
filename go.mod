@@ -3,7 +3,7 @@ module github.com/rusfort/easy-go
 go 1.26.4
 
 require (
-	github.com/confluentinc/confluent-kafka-go v1.9.2
+	github.com/confluentinc/confluent-kafka-go/v2 v2.15.0
 	github.com/go-chi/chi v1.5.5
 	github.com/json-iterator/go v1.1.12
 )
