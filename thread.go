@@ -176,3 +176,25 @@ func (t *Thread) MaybeStart(goInited bool) {
 func (t *Thread) Run() {
 	t.MaybeStart(false)
 }
+
+//-----
+
+func WaitConcurrentExec(threads ...*Thread) {
+	wg := sync.WaitGroup{}
+	wg.Add(len(threads))
+
+	for _, t := range threads {
+		go func() {
+			defer wg.Done()
+
+			t.MaybeStart(true)
+		}()
+	}
+
+	wg.Wait()
+}
+
+// func WorkThreads[T any](threads ...*Thread) []T{
+// 	mtx := sync.Mutex{}
+
+// }
