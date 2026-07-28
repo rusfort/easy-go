@@ -67,10 +67,6 @@ func getThreaderFromCore[F EGFunction[T], T any](thc *threadCore) *threader[F, T
 
 //-----
 
-type VoidFunction func()
-type ValueFunction[T any] func() T
-type ValueErrFunction[T any] func() (T, error)
-
 type EGFunction[T any] interface {
     ~func() | ~func() T | ~func() (T, error)
 }
@@ -216,11 +212,11 @@ func (t *Thread[F, T]) start(goInited bool) {
 
 func (t *Thread[F, T]) execute() {
 	switch v := any(t.routine).(type) {
-	case VoidFunction:
+	case func():
 		v()
-	case ValueFunction[T]:
+	case func() T:
 		v()
-	case ValueErrFunction[T]:
+	case func() (T, error):
 		v()
 	}
 }
