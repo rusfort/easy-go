@@ -72,6 +72,13 @@ func getThreaderFromCore[F EGFunction[T], T any](thc *threadCore) *threader[F, T
 
 //-----
 
+const (
+	EGFunctionTypeUnknown = iota
+	EGFunctionTypeDefault
+	EGFunctionTypeValue
+	EGFunctionTypeResult
+)
+
 type EGFunction[T any] interface {
 	~func() | ~func() T | ~func() (T, error)
 }
@@ -80,6 +87,19 @@ type threader[F EGFunction[T], T any] struct {
 	mtx     sync.Mutex
 	threads []*Thread[F, T]
 	exexMap sync.Map
+}
+
+func GetFunctionType[T any](f any) int {
+	switch f.(type) {
+	case func():
+		return EGFunctionTypeDefault
+	case func() T:
+		return EGFunctionTypeValue
+	case func() (T, error):
+		return EGFunctionTypeResult
+	default:
+		return EGFunctionTypeUnknown
+	}
 }
 
 func (tr *threader[F, T]) CreateNew(routine F) *Thread[F, T] {
@@ -125,6 +145,10 @@ type Thread[F EGFunction[T], T any] struct {
 }
 
 func NewThread[F EGFunction[T], T any](routine F) *Thread[F, T] {
+	return newThread[F, T](routine)
+}
+
+func newThread[F EGFunction[T], T any](routine F) *Thread[F, T] {
 	return createNewThreadInCore[F, T](&thc, routine)
 }
 
@@ -142,6 +166,15 @@ func (t *Thread[F, T]) Position() int {
 	}
 
 	return t.position
+}
+
+func (t *Thread[F, T]) Function() F {
+	if t == nil {
+		var f F
+		return f
+	}
+
+	return t.routine
 }
 
 func (t *Thread[F, T]) SetExecuted() {
@@ -291,7 +324,33 @@ func WaitConcurrentExec[F EGFunction[T], T any](threads ...*Thread[F, T]) {
 	wg.Wait()
 }
 
-// func WorkThreads[F EGFunction[T], T any](threads ...*Thread[F, T]) []T {
-// 	mtx := sync.Mutex{}
+func WorkThreads[F EGFunction[T], T any](threads ...*Thread[F, T]) *Slice[T] {
+	result := NewSlice[T]()
+	if len(threads) == 0 {
+		return result
+	}
 
-// }
+	if GetFunctionType[T](threads[0].Function()) == EGFunctionTypeDefault {
+		return nil
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(threads))
+
+	for _, t := range threads {
+		go func() {
+			defer wg.Done()
+
+			r := t.MaybeStart(true)
+			if r.result == nil {
+				return
+			}
+
+			result.Append(*r.result)
+		}()
+	}
+
+	wg.Wait()
+
+	return result
+}

@@ -1,7 +1,10 @@
 package eg
 
+import "sync"
+
 type Slice[T any] struct {
-	sl []T
+	mtx sync.Mutex
+	sl  []T
 }
 
 func NewSlice[T any](elems ...T) *Slice[T] {
@@ -17,30 +20,45 @@ func NewSliceOfSize[T any](size int64) *Slice[T] {
 }
 
 func (s *Slice[T]) Original() []T {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	return s.sl
 }
 
 func (s *Slice[T]) Size() int64 {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	return int64(len(s.sl))
 }
 
 func (s *Slice[T]) IsEmpty() bool {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	return len(s.sl) == 0
 }
 
 func (s *Slice[T]) Vanish() {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	s.sl = []T{}
 }
 
 func (s *Slice[T]) ResetToDefault() {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	s.sl = make([]T, s.Size())
 }
 
 func (s *Slice[T]) Erase() {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	s.sl = make([]T, 0, s.Size())
 }
 
 func (s *Slice[T]) Get(idx int64) T {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	if idx >= s.Size() || idx < 0 {
 		var t T
 		return t
@@ -50,6 +68,9 @@ func (s *Slice[T]) Get(idx int64) T {
 }
 
 func (s *Slice[T]) Enlarge(newSize int64) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	if newSize <= s.Size() {
 		return
 	}
@@ -59,6 +80,9 @@ func (s *Slice[T]) Enlarge(newSize int64) {
 }
 
 func (s *Slice[T]) Set(idx int64, value T) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	if idx < 0 {
 		return
 	}
@@ -71,21 +95,33 @@ func (s *Slice[T]) Set(idx int64, value T) {
 }
 
 func (s *Slice[T]) Append(elems ...T) *Slice[T] {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	s.sl = append(s.sl, elems...)
 	return s
 }
 
 func (s *Slice[T]) Prepend(elems ...T) *Slice[T] {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	s.sl = append(elems, s.sl...)
 	return s
 }
 
 func (s *Slice[T]) Extend(another *Slice[T]) *Slice[T] {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	s.sl = append(s.sl, another.Original()...)
 	return s
 }
 
 func (s *Slice[T]) Cut(start, end int64) *Slice[T] {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+
 	if start < 0 {
 		start = 0
 	}
