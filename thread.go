@@ -11,6 +11,11 @@ const (
 	egThreadPrefix = "EG_THREAD_"
 )
 
+type threadResult[T any] struct {
+	result *T
+	err    *error
+}
+
 type threadCore struct {
 	mtx       sync.Mutex
 	threaders map[reflect.Type]any
@@ -68,7 +73,7 @@ func getThreaderFromCore[F EGFunction[T], T any](thc *threadCore) *threader[F, T
 //-----
 
 type EGFunction[T any] interface {
-    ~func() | ~func() T | ~func() (T, error)
+	~func() | ~func() T | ~func() (T, error)
 }
 
 type threader[F EGFunction[T], T any] struct {
@@ -116,6 +121,7 @@ type Thread[F EGFunction[T], T any] struct {
 	previous, next *Thread[F, T]
 	routine        F
 	started        atomic.Bool
+	result         *threadResult[T]
 }
 
 func NewThread[F EGFunction[T], T any](routine F) *Thread[F, T] {
@@ -181,43 +187,60 @@ func (t *Thread[F, T]) After(previous *Thread[F, T]) *Thread[F, T] {
 	return t.previous
 }
 
-func (t *Thread[F, T]) start(goInited bool) {
+func (t *Thread[F, T]) start(goInited bool) threadResult[T] {
+	var zero threadResult[T]
 	if t == nil {
-		return
+		return zero
 	}
 
-	starter := func() {
+	starter := func() threadResult[T] {
+		var res threadResult[T]
 		t.previous.MaybeStart(true)
 		t.previous = nil
 
 		if !getThreaderFromCore[F, T](&thc).IsThreadExecuted(t.Position()) {
 			t.SetExecuted()
 			t.logSelf("started")
-			t.execute()
+			res = t.execute()
+			t.result = &res
 			t.logSelf("done")
 		}
 
 		t.next.MaybeStart(true)
 		t.next = nil
+
+		return res
 	}
 
 	if goInited {
 		t.logSelf("started no go")
-		starter()
+		return starter()
 	} else {
 		t.logSelf("started with go")
 		go starter()
 	}
+
+	return zero
 }
 
-func (t *Thread[F, T]) execute() {
+func (t *Thread[F, T]) execute() threadResult[T] {
 	switch v := any(t.routine).(type) {
 	case func():
 		v()
+		return threadResult[T]{}
 	case func() T:
-		v()
+		r := v()
+		return threadResult[T]{
+			result: &r,
+		}
 	case func() (T, error):
-		v()
+		r, err := v()
+		return threadResult[T]{
+			result: &r,
+			err:    &err,
+		}
+	default:
+		return threadResult[T]{}
 	}
 }
 
@@ -229,20 +252,22 @@ func (t *Thread[F, T]) Started() bool {
 	return t.started.Load()
 }
 
-func (t *Thread[F, T]) MaybeStart(goInited bool) {
+func (t *Thread[F, T]) MaybeStart(goInited bool) threadResult[T] {
+	var zero threadResult[T]
 	if t.Started() {
-		return
+		return zero
 	}
 
 	if goInited {
 		t.logSelf("maybe started no go")
-		t.start(true)
-		return
+		return t.start(true)
 	}
 
 	t.logSelf("maybe started with go")
 
 	go t.start(true)
+
+	return zero
 }
 
 func (t *Thread[F, T]) Run() {
@@ -266,7 +291,7 @@ func WaitConcurrentExec[F EGFunction[T], T any](threads ...*Thread[F, T]) {
 	wg.Wait()
 }
 
-// func WorkThreads[T any](threads ...*Thread) []T{
+// func WorkThreads[F EGFunction[T], T any](threads ...*Thread[F, T]) []T {
 // 	mtx := sync.Mutex{}
 
 // }
