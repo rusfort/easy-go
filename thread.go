@@ -23,7 +23,7 @@ type threadCore struct {
 
 var thc threadCore
 
-func createNewThreadInCore[F EGFunction[T], T any](thc *threadCore, op F) *Thread[F, T] {
+func createNewThreadInCore[F egFunction[T], T any](thc *threadCore, op F) *Thread[F, T] {
 	thc.mtx.Lock()
 	defer thc.mtx.Unlock()
 
@@ -51,7 +51,7 @@ func createNewThreadInCore[F EGFunction[T], T any](thc *threadCore, op F) *Threa
 	return thrdr.CreateNew(op)
 }
 
-func getThreaderFromCore[F EGFunction[T], T any](thc *threadCore) *threader[F, T] {
+func getThreaderFromCore[F egFunction[T], T any](thc *threadCore) *threader[F, T] {
 	thc.mtx.Lock()
 	defer thc.mtx.Unlock()
 
@@ -79,11 +79,11 @@ const (
 	EGFunctionTypeResult
 )
 
-type EGFunction[T any] interface {
+type egFunction[T any] interface {
 	~func() | ~func() T | ~func() (T, error)
 }
 
-type threader[F EGFunction[T], T any] struct {
+type threader[F egFunction[T], T any] struct {
 	mtx     sync.Mutex
 	threads []*Thread[F, T]
 	exexMap sync.Map
@@ -136,7 +136,7 @@ func (tr *threader[F, T]) SetThreadExecuted(position int) {
 
 //-----
 
-type Thread[F EGFunction[T], T any] struct {
+type Thread[F egFunction[T], T any] struct {
 	position       int
 	previous, next *Thread[F, T]
 	routine        F
@@ -144,11 +144,12 @@ type Thread[F EGFunction[T], T any] struct {
 	result         *threadResult[T]
 }
 
-func NewThread[F EGFunction[T], T any](routine F) *Thread[F, T] {
+// NewThread creates new Thread for one of the egFunction[T]
+func NewThread[F egFunction[T], T any](routine F) *Thread[F, T] {
 	return newThread[F, T](routine)
 }
 
-func newThread[F EGFunction[T], T any](routine F) *Thread[F, T] {
+func newThread[F egFunction[T], T any](routine F) *Thread[F, T] {
 	return createNewThreadInCore[F, T](&thc, routine)
 }
 
@@ -309,7 +310,7 @@ func (t *Thread[F, T]) Run() {
 
 //-----
 
-func WaitConcurrentExec[F EGFunction[T], T any](threads ...*Thread[F, T]) {
+func WaitConcurrentExec[F egFunction[T], T any](threads ...*Thread[F, T]) {
 	wg := sync.WaitGroup{}
 	wg.Add(len(threads))
 
@@ -324,7 +325,7 @@ func WaitConcurrentExec[F EGFunction[T], T any](threads ...*Thread[F, T]) {
 	wg.Wait()
 }
 
-func WorkThreads[F EGFunction[T], T any](threads ...*Thread[F, T]) *Slice[T] {
+func WorkThreads[F egFunction[T], T any](threads ...*Thread[F, T]) *Slice[T] {
 	result := NewSlice[T]()
 	if len(threads) == 0 {
 		return result
