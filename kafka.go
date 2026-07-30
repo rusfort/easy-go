@@ -84,21 +84,21 @@ type KafkaMessage struct {
 	Value any
 }
 
-func (kp *KafkaConsumer) Consume(ctx context.Context, topic string) (chan *KafkaMessage, error) {
+func (kp *KafkaConsumer) Consume(ctx context.Context, topic string) (*Chan[*KafkaMessage], error) {
 	defer kp.c.Close()
 
 	if err := kp.c.SubscribeTopics([]string{topic}, nil); err != nil {
 		return nil, fmt.Errorf("failed to subscribe topic: %w", err)
 	}
 
-	output := make(chan *KafkaMessage)
+	output := NewChan[*KafkaMessage]()
 
 	go func() {
 		run := true
 		for run {
 			select {
 			case <-ctx.Done():
-				close(output)
+				output.Close()
 				run = false
 			default:
 				ev := kp.c.Poll(100)
@@ -118,10 +118,10 @@ func (kp *KafkaConsumer) Consume(ctx context.Context, topic string) (chan *Kafka
 						log.Printf("commit error: %v", err)
 					}
 
-					output <- &KafkaMessage{
+					output.Write(&KafkaMessage{
 						Key:   string(e.Key),
 						Value: e.Value,
-					}
+					})
 
 				case kafka.Error:
 					log.Printf("kafka error: %v", e)
