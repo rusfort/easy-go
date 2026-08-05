@@ -5,78 +5,76 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	kafka "github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
 
 type KafkaProducer struct {
-	p *kafka.Producer
+	p *kafka.Client
 }
 
 func NewKafkaProducer(brokers, username, password string) *KafkaProducer {
-	p, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers":  brokers,
-		"acks":               "all",
-		"enable.idempotence": true,
-		"security.protocol":  "SASL_PLAINTEXT",
-		"sasl.mechanism":     "SCRAM-SHA-256",
-		"sasl.username":      username,
-		"sasl.password":      password,
-	})
+	saslMechanism := scram.Auth{
+		User: username,
+		Pass: password,
+	}.AsSha256Mechanism()
+
+	cl, err := kafka.NewClient(
+		kafka.SeedBrokers(strings.Split(brokers, ",")...),
+		kafka.SASL(saslMechanism),
+		kafka.AllowAutoTopicCreation(),
+	)
 	if err != nil {
 		log.Fatalf("producer create error: %v", err)
 	}
 
-	return &KafkaProducer{
-		p: p,
-	}
+	return &KafkaProducer{p: cl}
 }
 
-func (kp *KafkaProducer) Produce(topic, key string, value any) error {
+func (kp *KafkaProducer) Produce(ctx context.Context, topic, key string, value any) error {
 	v, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("Marshal: %w", err)
 	}
 
-	err = kp.p.Produce(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
-			Partition: kafka.PartitionAny,
-		},
-		Key:   []byte(key),
-		Value: v,
-	}, nil)
-	if err != nil {
-		return fmt.Errorf("failed to produce: %w", err)
+	record := &kafka.Record{Topic: topic, Key: []byte(key), Value: v}
+	res := kp.p.ProduceSync(ctx, record)
+	if err = res.FirstErr(); err != nil {
+		return fmt.Errorf("ProduceSync: %w", err)
 	}
 
 	return nil
 }
 
+func (kp *KafkaProducer) Close() {
+	kp.p.Close()
+}
+
 // ----------
 
 type KafkaConsumer struct {
-	c *kafka.Consumer
+	c *kafka.Client
 }
 
-func NewKafkaConsumer(brokers, groupID, username, password string) *KafkaConsumer {
-	c, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":  brokers,
-		"group.id":           groupID,
-		"auto.offset.reset":  "earliest",
-		"enable.auto.commit": false,
-		"security.protocol":  "SASL_PLAINTEXT",
-		"sasl.mechanism":     "SCRAM-SHA-256",
-		"sasl.username":      username,
-		"sasl.password":      password,
-	})
+func NewKafkaConsumer(brokers, groupID, topic, username, password string) *KafkaConsumer {
+	saslMechanism := scram.Auth{
+		User: username,
+		Pass: password,
+	}.AsSha256Mechanism()
+
+	cl, err := kafka.NewClient(
+		kafka.SeedBrokers(strings.Split(brokers, ",")...),
+		kafka.ConsumerGroup(groupID),
+		kafka.ConsumeTopics([]string{topic}...),
+		kafka.DisableAutoCommit(),
+		kafka.SASL(saslMechanism),
+	)
 	if err != nil {
 		log.Fatalf("consumer create error: %v", err)
 	}
-
-	return &KafkaConsumer{
-		c: c,
-	}
+	return &KafkaConsumer{c: cl}
 }
 
 type KafkaMessage struct {
@@ -84,12 +82,8 @@ type KafkaMessage struct {
 	Value any
 }
 
-func (kp *KafkaConsumer) Consume(ctx context.Context, topic string) (*Chan[*KafkaMessage], error) {
+func (kp *KafkaConsumer) Consume(ctx context.Context) (*Chan[*KafkaMessage], error) {
 	defer kp.c.Close()
-
-	if err := kp.c.SubscribeTopics([]string{topic}, nil); err != nil {
-		return nil, fmt.Errorf("failed to subscribe topic: %w", err)
-	}
 
 	output := NewChan[*KafkaMessage]()
 
@@ -101,33 +95,24 @@ func (kp *KafkaConsumer) Consume(ctx context.Context, topic string) (*Chan[*Kafk
 				output.Close()
 				run = false
 			default:
-				ev := kp.c.Poll(100)
-				if ev == nil {
-					continue
+				fetches := kp.c.PollFetches(ctx)
+				if errs := fetches.Errors(); len(errs) > 0 {
+					log.Printf("Poll errors: %v", errs)
 				}
 
-				switch e := ev.(type) {
-				case *kafka.Message:
-					log.Printf("received: topic=%s partition=%d offset=%d\n",
-						*e.TopicPartition.Topic,
-						e.TopicPartition.Partition,
-						e.TopicPartition.Offset,
-					)
-
-					if _, err := kp.c.CommitMessage(e); err != nil {
-						log.Printf("commit error: %v", err)
-					}
-
+				iter := fetches.RecordIter()
+				var records []*kafka.Record
+				for !iter.Done() {
+					record := iter.Next()
+					records = append(records, record)
 					output.Write(&KafkaMessage{
-						Key:   string(e.Key),
-						Value: e.Value,
+						Key:   string(record.Key),
+						Value: record.Value,
 					})
+				}
 
-				case kafka.Error:
-					log.Printf("kafka error: %v", e)
-
-				default:
-					// ignore other events
+				if err := kp.c.CommitRecords(ctx, records...); err != nil {
+					log.Printf("Failed to commit records: %v", err)
 				}
 			}
 		}
