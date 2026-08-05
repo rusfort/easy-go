@@ -7,8 +7,8 @@ import (
 
 type QueueObject struct {
 	operation func() (any, error)
-	out       chan any
-	errOut    chan error
+	out       *Chan[any]
+	errOut    *Chan[error]
 }
 
 type Queue struct {
@@ -16,8 +16,8 @@ type Queue struct {
 	timeoutMillis int64
 
 	lastRequestByInstance map[string]int64
-	queuesByInstance      map[string]chan *QueueObject
-	terminatorsByInstance map[string]chan struct{}
+	queuesByInstance      map[string]*Chan[*QueueObject]
+	terminatorsByInstance map[string]*Chan[struct{}]
 }
 
 func NewRateLimitedQueue(timeoutMillis int64) *Queue {
@@ -25,14 +25,14 @@ func NewRateLimitedQueue(timeoutMillis int64) *Queue {
 		timeoutMillis:         timeoutMillis,
 		mtx:                   &sync.Mutex{},
 		lastRequestByInstance: make(map[string]int64),
-		queuesByInstance:      make(map[string]chan *QueueObject),
-		terminatorsByInstance: make(map[string]chan struct{}),
+		queuesByInstance:      make(map[string]*Chan[*QueueObject]),
+		terminatorsByInstance: make(map[string]*Chan[struct{}]),
 	}
 
 	return q
 }
 
-func workQueue(q *Queue, instance string, terminator <-chan struct{}) {
+func workQueue(q *Queue, instance string, terminator *Chan[struct{}]) {
 	for {
 		now := time.Now().UnixMilli()
 
@@ -51,59 +51,59 @@ func workQueue(q *Queue, instance string, terminator <-chan struct{}) {
 			continue
 		}
 
-		select {
-		case <-terminator:
-			{
-				return
-			}
-		case o := <-in:
-			{
+		ChanSelect(Selector{
+			terminator: Returner,
+			in: func(qo any) {
 				q.mtx.Lock()
 				q.lastRequestByInstance[instance] = time.Now().UnixMilli()
 				q.mtx.Unlock()
 
+				o, ok := qo.(*QueueObject)
+				if !ok {
+					return
+				}
+
 				go func() {
 					result, err := o.operation()
-					o.out <- result
-					o.errOut <- err
+					o.out.Write(result)
+					o.errOut.Write(err)
 				}()
-				continue
-			}
-		}
+			},
+		})
 	}
 }
 
-func PushToQueue[R any](q *Queue, instance string, operation func() (any, error), out chan R, errOut chan error) {
+func PushToQueue[R any](q *Queue, instance string, operation func() (any, error), out *Chan[R], errOut *Chan[error]) {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
 
 	terminator, ok := q.terminatorsByInstance[instance]
 	if !ok {
-		terminator = make(chan struct{})
+		terminator = NewChan[struct{}]()
 		q.terminatorsByInstance[instance] = terminator
 	}
 
 	queue, ok := q.queuesByInstance[instance]
 	if !ok {
-		queue = make(chan *QueueObject)
+		queue = NewChan[*QueueObject]()
 		q.queuesByInstance[instance] = queue
 		go workQueue(q, instance, terminator)
 	}
 
-	result := make(chan any)
+	result := NewChan[any]()
 	go func() {
-		queue <- &QueueObject{
+		queue.Write(&QueueObject{
 			operation: operation,
 			out:       result,
 			errOut:    errOut,
-		}
+		})
 
-		res, ok := (<-result).(R)
+		res, ok := (result.Read()).(R)
 		if !ok {
 			var empty R
-			out <- empty
+			out.Write(empty)
 		} else {
-			out <- res
+			out.Write(res)
 		}
 	}()
 }
@@ -114,7 +114,7 @@ func (q *Queue) TerminateQueue(instance string) {
 
 	terminator, ok := q.terminatorsByInstance[instance]
 	if ok {
-		terminator <- struct{}{}
+		terminator.Write(struct{}{})
 	}
 
 	_, ok = q.queuesByInstance[instance]
