@@ -51,7 +51,7 @@ func workQueue(q *Queue, instance string, terminator *Chan[struct{}]) {
 			continue
 		}
 
-		ChanSelect(Selector{
+		returning := ChanSelect(Selector{
 			terminator: Returner,
 			in: func(qo any) {
 				q.mtx.Lock()
@@ -70,6 +70,10 @@ func workQueue(q *Queue, instance string, terminator *Chan[struct{}]) {
 				}()
 			},
 		})
+
+		if returning {
+			return
+		}
 	}
 }
 
