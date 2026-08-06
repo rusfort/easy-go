@@ -139,9 +139,3 @@ func ChanSelect(selector Selector) bool {
 func isReturner(f func(any)) bool {
 	return FuncEqual(f, Returner)
 }
-
-func createInstance(t reflect.Type) any {
-	ptrValue := reflect.New(t)
-
-	return ptrValue.Interface()
-}
