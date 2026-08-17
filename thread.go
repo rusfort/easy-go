@@ -198,9 +198,9 @@ func (t *Thread[F, T]) SetExecuted() {
 	getThreaderFromCore[F, T](&thc).SetThreadExecuted(t.position)
 }
 
-func (t *Thread[F, T]) logSelf(comment string) {
-	fmt.Printf("%s: %s\n", t.String(), comment)
-}
+// func (t *Thread[F, T]) logSelf(comment string) {
+// 	fmt.Printf("%s: %s\n", t.String(), comment)
+// }
 
 func (t *Thread[F, T]) Then(next *Thread[F, T]) *Thread[F, T] {
 	if t == nil || next == nil {
@@ -245,10 +245,8 @@ func (t *Thread[F, T]) start(goInited bool) threadResult[T] {
 
 		if !getThreaderFromCore[F, T](&thc).IsThreadExecuted(t.Position()) {
 			t.SetExecuted()
-			t.logSelf("started")
 			res = t.execute()
 			t.result = &res
-			t.logSelf("done")
 		}
 
 		t.next.MaybeStart(true)
@@ -258,10 +256,8 @@ func (t *Thread[F, T]) start(goInited bool) threadResult[T] {
 	}
 
 	if goInited {
-		t.logSelf("started no go")
 		return starter()
 	} else {
-		t.logSelf("started with go")
 		go starter()
 	}
 
@@ -304,11 +300,8 @@ func (t *Thread[F, T]) MaybeStart(goInited bool) threadResult[T] {
 	}
 
 	if goInited {
-		t.logSelf("maybe started no go")
 		return t.start(true)
 	}
-
-	t.logSelf("maybe started with go")
 
 	go t.start(true)
 
