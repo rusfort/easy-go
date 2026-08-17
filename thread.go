@@ -3,6 +3,7 @@ package eg
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -149,6 +150,14 @@ func NewThread[F egFunction[T], T any](routine F) *Thread[F, T] {
 	return newThread[F, T](routine)
 }
 
+// NewBasicThread creates new Thread exactly for 'func()' with no return type
+func NewBasicThread(routine func()) *Thread[func() any, any] {
+	return NewThread[func() any, any](func() any {
+		routine()
+		return nil
+	})
+}
+
 func newThread[F egFunction[T], T any](routine F) *Thread[F, T] {
 	return createNewThreadInCore[F, T](&thc, routine)
 }
@@ -158,7 +167,9 @@ func (t *Thread[F, T]) String() string {
 		return fmt.Sprint(egThreadPrefix + "NULL")
 	}
 
-	return fmt.Sprintf("%s%d", egThreadPrefix, t.position)
+	trType := strings.ReplaceAll(fmt.Sprintf("%T", t.routine), " ", "")
+
+	return fmt.Sprintf("%s%s_%d", egThreadPrefix, trType, t.position)
 }
 
 func (t *Thread[F, T]) Position() int {
