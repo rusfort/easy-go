@@ -90,6 +90,7 @@ type threader[F egFunction[T], T any] struct {
 	exexMap sync.Map
 }
 
+// GetFunctionType - TODO
 func GetFunctionType[T any](f any) int {
 	switch f.(type) {
 	case func():

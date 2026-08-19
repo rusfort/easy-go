@@ -43,7 +43,7 @@ func workQueue(q *Queue, instance string, terminator *Chan[struct{}]) {
 
 		if ok {
 			if q.timeoutMillis > now-lr {
-				time.Sleep(time.Duration(q.timeoutMillis - (now - lr)))
+				time.Sleep(time.Duration(1000000 * (q.timeoutMillis - (now - lr))))
 			}
 		}
 
