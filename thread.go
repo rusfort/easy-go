@@ -2,6 +2,7 @@ package eg
 
 import (
 	"fmt"
+	"log"
 	"reflect"
 	"strings"
 	"sync"
@@ -234,6 +235,12 @@ func (t *Thread[F, T]) After(previous *Thread[F, T]) *Thread[F, T] {
 }
 
 func (t *Thread[F, T]) start(goInited bool) threadResult[T] {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("EG: THREAD (in start) PANICED: %v", err)
+		}
+	}()
+
 	var zero threadResult[T]
 	if t == nil {
 		return zero
@@ -259,7 +266,15 @@ func (t *Thread[F, T]) start(goInited bool) threadResult[T] {
 	if goInited {
 		return starter()
 	} else {
-		go starter()
+		go func() {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Printf("EG: THREAD (in starter) PANICED: %v", err)
+				}
+			}()
+
+			starter()
+		}()
 	}
 
 	return zero
