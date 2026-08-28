@@ -20,6 +20,9 @@ type Queue struct {
 	terminatorsByInstance map[string]*Chan[struct{}]
 }
 
+// NewRateLimitedQueue creates a Queue with timeoutMillis interval
+//
+//	e.g. you are limited by 10 RPS on external API then you use NewRateLimitedQueue(100)
 func NewRateLimitedQueue(timeoutMillis int64) *Queue {
 	q := &Queue{
 		timeoutMillis:         timeoutMillis,
@@ -77,6 +80,9 @@ func workQueue(q *Queue, instance string, terminator *Chan[struct{}]) {
 	}
 }
 
+// PushToQueue pushes next task to instance's queue - any instance works separately
+//
+//	e.g. you need to send notifications to different users or of different types - you choose the instance
 func PushToQueue[R any](q *Queue, instance string, operation func() (any, error), out *Chan[R], errOut *Chan[error]) {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
@@ -112,6 +118,7 @@ func PushToQueue[R any](q *Queue, instance string, operation func() (any, error)
 	}()
 }
 
+// TerminateQueue terminates all processes for given instance clearing the whole queue for it
 func (q *Queue) TerminateQueue(instance string) {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
@@ -130,4 +137,17 @@ func (q *Queue) TerminateQueue(instance string) {
 	if ok {
 		delete(q.lastRequestByInstance, instance)
 	}
+}
+
+// Shutdown terminates Queue completely. You must not use Queue afterwards!
+func (q *Queue) Shutdown() {
+	q.mtx.Lock()
+	defer q.mtx.Unlock()
+
+	for _, terminator := range q.terminatorsByInstance {
+		terminator.Write(struct{}{})
+	}
+
+	q.terminatorsByInstance = nil
+	q.lastRequestByInstance = nil
 }
