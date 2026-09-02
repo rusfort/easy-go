@@ -13,11 +13,13 @@ const (
 	egThreadPrefix = "EG_THREAD_"
 )
 
+// threadResult - an abstract object which stands for return parameters of any function
 type threadResult[T any] struct {
 	result *T
 	err    *error
 }
 
+// threadCore is a singleton like GO engine which controls all threaders
 type threadCore struct {
 	mtx       sync.Mutex
 	threaders map[reflect.Type]any
@@ -81,17 +83,19 @@ const (
 	EGFunctionTypeResult
 )
 
+// egFunction stands for an abstraction of any golang func possible
 type egFunction[T any] interface {
 	~func() | ~func() T | ~func() (T, error)
 }
 
+// threader is a controller of all threads of a specific type
 type threader[F egFunction[T], T any] struct {
 	mtx     sync.Mutex
 	threads []*Thread[F, T]
 	exexMap sync.Map
 }
 
-// GetFunctionType - TODO
+// GetFunctionType is a way to recognise a type of egFunction
 func GetFunctionType[T any](f any) int {
 	switch f.(type) {
 	case func():
@@ -105,6 +109,7 @@ func GetFunctionType[T any](f any) int {
 	}
 }
 
+// CreateNew creates a new thread in threader
 func (tr *threader[F, T]) CreateNew(routine F) *Thread[F, T] {
 	tr.mtx.Lock()
 	defer tr.mtx.Unlock()
@@ -121,6 +126,7 @@ func (tr *threader[F, T]) CreateNew(routine F) *Thread[F, T] {
 	return t
 }
 
+// IsThreadExecuted returns an execution status of a thread inside a threader
 func (tr *threader[F, T]) IsThreadExecuted(position int) bool {
 	tr.mtx.Lock()
 	defer tr.mtx.Unlock()
@@ -133,12 +139,14 @@ func (tr *threader[F, T]) IsThreadExecuted(position int) bool {
 	return executed.(bool)
 }
 
+// SetThreadExecuted tells threader about a successful execution
 func (tr *threader[F, T]) SetThreadExecuted(position int) {
 	tr.exexMap.Delete(position)
 }
 
 //-----
 
+// Thread is a base entity of easy-go lib - it works the similar way as threads in other languages
 type Thread[F egFunction[T], T any] struct {
 	position       int
 	previous, next *Thread[F, T]
@@ -164,6 +172,7 @@ func newThread[F egFunction[T], T any](routine F) *Thread[F, T] {
 	return createNewThreadInCore[F, T](&thc, routine)
 }
 
+// String describes a Thread
 func (t *Thread[F, T]) String() string {
 	if t == nil {
 		return fmt.Sprint(egThreadPrefix + "NULL")
@@ -174,6 +183,7 @@ func (t *Thread[F, T]) String() string {
 	return fmt.Sprintf("%s%s_%d", egThreadPrefix, trType, t.position)
 }
 
+// Position returns a position of the Thread inside a threader of this type
 func (t *Thread[F, T]) Position() int {
 	if t == nil {
 		return -1
@@ -182,6 +192,7 @@ func (t *Thread[F, T]) Position() int {
 	return t.position
 }
 
+// Function returns an executable routine of the Thread itself
 func (t *Thread[F, T]) Function() F {
 	if t == nil {
 		var f F
@@ -191,6 +202,7 @@ func (t *Thread[F, T]) Function() F {
 	return t.routine
 }
 
+// SetExecuted prevents the Thread to be executed twice
 func (t *Thread[F, T]) SetExecuted() {
 	if t == nil {
 		return
@@ -200,10 +212,7 @@ func (t *Thread[F, T]) SetExecuted() {
 	getThreaderFromCore[F, T](&thc).SetThreadExecuted(t.position)
 }
 
-// func (t *Thread[F, T]) logSelf(comment string) {
-// 	fmt.Printf("%s: %s\n", t.String(), comment)
-// }
-
+// Then records a strict order of execution: next is always executed after t
 func (t *Thread[F, T]) Then(next *Thread[F, T]) *Thread[F, T] {
 	if t == nil || next == nil {
 		return t
@@ -219,6 +228,7 @@ func (t *Thread[F, T]) Then(next *Thread[F, T]) *Thread[F, T] {
 	return t.next
 }
 
+// After records a strict order of execution: previous is always executed before t
 func (t *Thread[F, T]) After(previous *Thread[F, T]) *Thread[F, T] {
 	if t == nil || previous == nil {
 		return t
@@ -234,6 +244,7 @@ func (t *Thread[F, T]) After(previous *Thread[F, T]) *Thread[F, T] {
 	return t.previous
 }
 
+// start is a main execution engine of a Thread - it's panic free and never creates excess goroutine
 func (t *Thread[F, T]) start(goInited bool) threadResult[T] {
 	defer func() {
 		if err := recover(); err != nil {
@@ -280,6 +291,7 @@ func (t *Thread[F, T]) start(goInited bool) threadResult[T] {
 	return zero
 }
 
+// execute executes the core routine of a Thread and returns a threadResult
 func (t *Thread[F, T]) execute() threadResult[T] {
 	switch v := any(t.routine).(type) {
 	case func():
@@ -301,6 +313,7 @@ func (t *Thread[F, T]) execute() threadResult[T] {
 	}
 }
 
+// Started returns a fact of the Thread execution
 func (t *Thread[F, T]) Started() bool {
 	if t == nil {
 		return true
@@ -309,6 +322,7 @@ func (t *Thread[F, T]) Started() bool {
 	return t.started.Load()
 }
 
+// MaybeStart is a double-start-safe and excess-goroutine-safe execution
 func (t *Thread[F, T]) MaybeStart(goInited bool) threadResult[T] {
 	var zero threadResult[T]
 	if t.Started() {
@@ -324,12 +338,14 @@ func (t *Thread[F, T]) MaybeStart(goInited bool) threadResult[T] {
 	return zero
 }
 
+// Run runs a Thread concurrently
 func (t *Thread[F, T]) Run() {
 	t.MaybeStart(false)
 }
 
 //-----
 
+// WaitConcurrentExec runs all of the given threads concurrently and waits till all of them finish
 func WaitConcurrentExec[F egFunction[T], T any](threads ...*Thread[F, T]) {
 	wg := sync.WaitGroup{}
 	wg.Add(len(threads))
@@ -345,6 +361,7 @@ func WaitConcurrentExec[F egFunction[T], T any](threads ...*Thread[F, T]) {
 	wg.Wait()
 }
 
+// WorkThreads is the same as WaitConcurrentExec but returns a Slice of results (if a Thread type provides a threadResult)
 func WorkThreads[F egFunction[T], T any](threads ...*Thread[F, T]) *Slice[T] {
 	result := NewSlice[T]()
 	if len(threads) == 0 {
