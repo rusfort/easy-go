@@ -14,12 +14,22 @@ import (
 )
 
 const (
-	timeout     = 5 * time.Second
-	goodCode    = "2"
-	errCodeAuth = "401"
+	timeout          = 5 * time.Second
+	goodCode         = "2"
+	errCodeBadReq    = "400"
+	errCodeAuth      = "401"
+	errCodeForbidden = "403"
+	errCodeNotFound  = "404"
+	errTooManyReq    = "429"
 )
 
-var ErrAuthFailed = errors.New("auth failed")
+var (
+	ErrAuthFailed = errors.New("auth failed")
+	ErrBadRequest = errors.New("bad request")
+	ErrNotFound   = errors.New("not found")
+	ErrRateLimit  = errors.New("rate limit exceeded")
+	ErrForbidden  = errors.New("forbidden")
+)
 
 func RequestPost(
 	ctx context.Context,
@@ -82,6 +92,22 @@ func doRequest(req *http.Request) ([]byte, error) {
 	if !strings.HasPrefix(resp.Status, goodCode) {
 		if strings.HasPrefix(resp.Status, errCodeAuth) {
 			return bodyBytes, ErrAuthFailed
+		}
+
+		if strings.HasPrefix(resp.Status, errTooManyReq) {
+			return bodyBytes, ErrRateLimit
+		}
+
+		if strings.HasPrefix(resp.Status, errCodeBadReq) {
+			return bodyBytes, ErrBadRequest
+		}
+
+		if strings.HasPrefix(resp.Status, errCodeForbidden) {
+			return bodyBytes, ErrForbidden
+		}
+
+		if strings.HasPrefix(resp.Status, errCodeNotFound) {
+			return bodyBytes, ErrNotFound
 		}
 
 		return bodyBytes, fmt.Errorf("bad response status: %s", resp.Status)
