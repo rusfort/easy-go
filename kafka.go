@@ -6,16 +6,23 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	kafka "github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
 
 type KafkaProducer struct {
+	isSync bool
+
 	p *kafka.Client
 }
 
-func NewKafkaProducer(brokers, username, password string) *KafkaProducer {
+type errorLogger interface {
+	LogErrorf(format string, args ...any)
+}
+
+func NewKafkaProducer(sync bool, brokers, username, password string) *KafkaProducer {
 	saslMechanism := scram.Auth{
 		User: username,
 		Pass: password,
@@ -25,15 +32,28 @@ func NewKafkaProducer(brokers, username, password string) *KafkaProducer {
 		kafka.SeedBrokers(strings.Split(brokers, ",")...),
 		kafka.SASL(saslMechanism),
 		kafka.AllowAutoTopicCreation(),
+		kafka.ProducerLinger(5*time.Millisecond),
+		kafka.ProduceRequestTimeout(5*time.Second),
 	)
 	if err != nil {
 		log.Fatalf("producer create error: %v", err)
 	}
 
-	return &KafkaProducer{p: cl}
+	return &KafkaProducer{
+		isSync: sync,
+		p:      cl,
+	}
 }
 
-func (kp *KafkaProducer) Produce(ctx context.Context, topic, key string, value any) error {
+func (kp *KafkaProducer) Produce(ctx context.Context, topic, key string, value any, logger errorLogger) error {
+	if kp.isSync {
+		return kp.produceSync(ctx, topic, key, value)
+	}
+
+	return kp.produceAsync(topic, key, value, logger)
+}
+
+func (kp *KafkaProducer) produceSync(ctx context.Context, topic, key string, value any) error {
 	v, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("Marshal: %w", err)
@@ -44,6 +64,27 @@ func (kp *KafkaProducer) Produce(ctx context.Context, topic, key string, value a
 	if err = res.FirstErr(); err != nil {
 		return fmt.Errorf("ProduceSync: %w", err)
 	}
+
+	return nil
+}
+
+func (kp *KafkaProducer) produceAsync(topic, key string, value any, logger errorLogger) error {
+	v, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("Marshal: %w", err)
+	}
+
+	record := &kafka.Record{Topic: topic, Key: []byte(key), Value: v}
+	kp.p.Produce(context.Background(), record, func(rec *kafka.Record, err error) {
+		if err != nil {
+			if logger != nil {
+				logger.LogErrorf("[EG KAFKA ERROR] Failed to produce message: %v", err)
+			} else {
+				log.Printf("[EG KAFKA ERROR] Failed to produce message: %v", err)
+			}
+			return
+		}
+	})
 
 	return nil
 }
