@@ -2,8 +2,11 @@ package eg
 
 func ToPtr[T comparable](t T) *T {
 	ptr := new(T)
+
 	if t == *ptr {
 		return nil
 	}
+
+	*ptr = t
 	return ptr
 }
